@@ -118,13 +118,13 @@ class SerializedRowGroup : public RowGroupReader::Contents {
     }
 
     stream = properties_.GetStream(source_, col_start, col_length);
-    std::unique_ptr<ColumnCryptoMetaData> crypto_meta_data = col->crypto_meta_data();
+    std::unique_ptr<ColumnCryptoMetaData> crypto_metadata = col->crypto_metadata();
 
     bool encrypted = true;
 
     // file is unencrypted
     // or file is encrypted but column is unencrypted
-    if (!file_crypto_metadata_ || !crypto_meta_data) {
+    if (!file_crypto_metadata_ || !crypto_metadata) {
       encrypted = false;
     }
 
@@ -138,8 +138,8 @@ class SerializedRowGroup : public RowGroupReader::Contents {
     auto file_decryption = properties_.file_decryption();
 
     // the column is encrypted with footer key
-    if (crypto_meta_data->encrypted_with_footer_key()) {
-      std::string footer_key_metadata = file_crypto_metadata_->footer_key_metadata();
+    if (crypto_metadata->encrypted_with_footer_key()) {
+      std::string footer_key_metadata = file_crypto_metadata_->key_metadata();
       std::string footer_key = file_decryption->GetFooterKey(footer_key_metadata);
 
       if (footer_key.empty()) {
@@ -156,7 +156,7 @@ class SerializedRowGroup : public RowGroupReader::Contents {
 
     // file is non-uniform encrypted and the column is encrypted with its own key
 
-    std::string column_key_metadata = crypto_meta_data->column_key_metadata();
+    std::string column_key_metadata = crypto_metadata->key_metadata();
     // encrypted with column key
     std::string column_key =
         file_decryption->GetColumnKey(col->path_in_schema(), column_key_metadata);
@@ -228,7 +228,8 @@ class SerializedFile : public ParquetFileReader::Contents {
         source_->ReadAt(file_size - footer_read_size, footer_read_size, footer_buffer);
 
     // Check if all bytes are read. Check if last 4 bytes read have the magic bits
-    // no encryption
+    // no encryption or encryption with plaintext footer
+    // TODO: encryption with plaintext footer
     if (bytes_read == footer_read_size &&
         memcmp(footer_buffer + footer_read_size - 4, PARQUET_MAGIC, 4) == 0) {
       uint32_t metadata_len =
@@ -258,63 +259,63 @@ class SerializedFile : public ParquetFileReader::Contents {
 
       file_metadata_ = FileMetaData::Make(metadata_buffer->data(), &metadata_len);
     }
-    // encryption
+    // encryption with encrypted footer
     else if (bytes_read == footer_read_size &&
              memcmp(footer_buffer + footer_read_size - 4, PARQUET_EMAGIC, 4) == 0) {
-      // read crypto metadata
-      uint32_t crypto_metadata_len =
+      // both metadata & crypto metadata length
+      uint32_t footer_len =
           *reinterpret_cast<uint32_t*>(footer_buffer + footer_read_size - FOOTER_SIZE);
-      int64_t crypto_metadata_start = file_size - FOOTER_SIZE - crypto_metadata_len;
-
-      if (FOOTER_SIZE + crypto_metadata_len > file_size) {
+      int64_t crypto_metadata_start = file_size - FOOTER_SIZE - footer_len;
+       if (FOOTER_SIZE + footer_len > file_size) {
         throw ParquetException(
             "Invalid parquet file. File is less than "
             "file metadata size.");
       }
-
       std::shared_ptr<ResizableBuffer> crypto_metadata_buffer =
-          AllocateBuffer(properties_.memory_pool(), crypto_metadata_len);
+          AllocateBuffer(properties_.memory_pool(), footer_len);
 
       // Check if the footer_buffer contains the entire metadata
-      if (footer_read_size >= (crypto_metadata_len + FOOTER_SIZE)) {
+      if (footer_read_size >= (footer_len + FOOTER_SIZE)) {
         memcpy(crypto_metadata_buffer->mutable_data(),
-               footer_buffer + (footer_read_size - crypto_metadata_len - FOOTER_SIZE),
-               crypto_metadata_len);
+               footer_buffer + (footer_read_size - footer_len - FOOTER_SIZE),
+               footer_len);
       } else {
-        bytes_read = source_->ReadAt(crypto_metadata_start, crypto_metadata_len,
+        bytes_read = source_->ReadAt(crypto_metadata_start, footer_len,
                                      crypto_metadata_buffer->mutable_data());
-        if (bytes_read != crypto_metadata_len) {
+        if (bytes_read != footer_len) {
           throw ParquetException("Invalid parquet file. Could not read metadata bytes.");
         }
       }
 
+      uint32_t crypto_metadata_len = footer_len;
       file_crypto_metadata_ =
-          FileCryptoMetaData::Make(crypto_metadata_buffer->data(), &crypto_metadata_len);
+                FileCryptoMetaData::Make(crypto_metadata_buffer->data(), &crypto_metadata_len);
 
-      int64_t footer_offset = file_crypto_metadata_->footer_offset();
-      uint32_t footer_read_size = (uint32_t)(crypto_metadata_start - footer_offset);
-
-      std::shared_ptr<ResizableBuffer> footer_buffer =
-          AllocateBuffer(properties_.memory_pool(), footer_read_size);
+      int64_t metadata_offset = file_size - FOOTER_SIZE - footer_len + crypto_metadata_len;
+      uint32_t metadata_len = footer_len - crypto_metadata_len;
+      std::shared_ptr<ResizableBuffer> metadata_buffer =
+           AllocateBuffer(properties_.memory_pool(), metadata_len);
       bytes_read =
-          source_->ReadAt(footer_offset, footer_read_size, footer_buffer->mutable_data());
-
-      if (file_crypto_metadata_->encrypted_footer()) {
-        // get footer key metadata
-        std::string footer_key_metadata = file_crypto_metadata_->footer_key_metadata();
-
-        auto file_decryption = properties_.file_decryption();
-        std::string footer_key = file_decryption->GetFooterKey(footer_key_metadata);
-
-        auto footer_encryption = std::make_shared<EncryptionProperties>(
-            file_crypto_metadata_->encryption_algorithm().algorithm, footer_key,
-            file_decryption->GetAad());
-
-        file_metadata_ = FileMetaData::Make(footer_buffer->data(), &footer_read_size,
-                                            footer_encryption);
-      } else {
-        file_metadata_ = FileMetaData::Make(footer_buffer->data(), &footer_read_size);
+           source_->ReadAt(metadata_offset, metadata_len, metadata_buffer->mutable_data());
+      if (bytes_read != metadata_len) {
+        throw ParquetException("Invalid encrypted parquet file. Could not read footer metadata bytes.");
       }
+
+      // get footer key metadata
+      std::string footer_key_metadata = file_crypto_metadata_->key_metadata();
+      auto file_decryption = properties_.file_decryption();
+      if (file_decryption == nullptr) {
+        throw ParquetException("No decryption properties are provided. Could not read encrypted footer metadata");
+      }
+      std::string footer_key = file_decryption->GetFooterKey(footer_key_metadata);
+      if (footer_key.size() == 0) {
+        throw ParquetException("Invalid footer encryption key. Could not parse footer metadata");
+      }
+      auto footer_encryption = std::make_shared<EncryptionProperties>(
+          file_crypto_metadata_->encryption_algorithm().algorithm, footer_key,
+          file_decryption->GetAad());
+      file_metadata_ = FileMetaData::Make(metadata_buffer->data(), &metadata_len,
+                                       footer_encryption);
     }
     // error
     else {

@@ -876,7 +876,7 @@ struct AesGcmCtrV1 {
 
   /** Unique file identifier part of AAD suffix **/
   2: optional binary aad_file_unique
-  
+
   /** In files encrypted with AAD prefix without storing it,
    * readers must supply the prefix **/
   3: optional bool supply_aad_prefix
