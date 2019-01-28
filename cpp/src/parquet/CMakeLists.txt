@@ -162,6 +162,7 @@ set(PARQUET_SRCS
     column_scanner.cc
     column_writer.cc
     encoding.cc
+    encryption.cc
     file_reader.cc
     file_writer.cc
     metadata.cc
@@ -172,6 +173,7 @@ set(PARQUET_SRCS
     schema.cc
     statistics.cc
     types.cc
+    util/crypto.cc
     util/memory.cc)
 
 # Ensure that thrift compilation is done before using its generated headers
