@@ -173,6 +173,11 @@ class SerializedPageWriter : public PageWriter {
           encryption_, false, compressed_data->data(), output_data_len,
           encrypted_data_buffer->mutable_data());
       output_data_buffer = encrypted_data_buffer->data();
+      if (output_data_len != encrypted_data_buffer->size()) {
+        std::stringstream ss;
+        ss << "cipher length is greater than cipher buffer capacity: " << output_data_len << encrypted_data_buffer->size() << "\n";
+        throw ParquetException(ss.str());
+      }
     }
 
     format::PageHeader page_header;
@@ -251,6 +256,11 @@ class SerializedPageWriter : public PageWriter {
           encryption_, false, compressed_data->data(), output_data_len,
           encrypted_data_buffer->mutable_data());
       output_data_buffer = encrypted_data_buffer->data();
+      if (output_data_len != encrypted_data_buffer->size()) {
+        std::stringstream ss;
+        ss << "cipher length is greater than cipher buffer capacity: " << output_data_len << encrypted_data_buffer->size() << "\n";
+        throw ParquetException(ss.str());
+      }
     }
 
     format::PageHeader page_header;

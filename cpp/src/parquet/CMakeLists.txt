@@ -80,6 +80,16 @@ else()
   endif()
 endif()
 
+#############################################################
+# OpenSSL linkage
+find_package(OpenSSL REQUIRED)
+message(STATUS "OPENSSL_FOUND ${OPENSSL_FOUND}")
+if(OPENSSL_FOUND)
+  set(OPENSSL_USE_STATIC_LIBS TRUE)
+  include_directories(${OPENSSL_INCLUDE_DIR})
+endif()
+#############################################################
+
 set(PARQUET_MIN_TEST_LIBS
   gtest_main
   gtest)
@@ -205,7 +215,7 @@ ADD_ARROW_LIB(parquet
   DEPENDENCIES ${PARQUET_DEPENDENCIES}
   SHARED_LINK_FLAGS ${PARQUET_SHARED_LINK_FLAGS}
   SHARED_PRIVATE_LINK_LIBS ${PARQUET_INTERFACE_LINK_LIBS}
-  STATIC_LINK_LIBS ${PARQUET_INTERFACE_LINK_LIBS}
+  STATIC_LINK_LIBS ${PARQUET_INTERFACE_LINK_LIBS} ${OPENSSL_CRYPTO_LIBRARY}
 )
 
 # Thrift requires these definitions for some types that we use
