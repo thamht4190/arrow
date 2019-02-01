@@ -185,7 +185,7 @@ class PARQUET_EXPORT FileMetaData {
   // API convenience to get a MetaData accessor
   static std::shared_ptr<FileMetaData> Make(const void* serialized_metadata,
                                             uint32_t* metadata_len,
-                                            std::shared_ptr<EncryptionProperties> encryption = NULLPTR);
+                                            const std::shared_ptr<EncryptionProperties>& encryption = NULLPTR);
 
   ~FileMetaData();
 
@@ -201,7 +201,7 @@ class PARQUET_EXPORT FileMetaData {
 
   const ApplicationVersion& writer_version() const;
 
-  void WriteTo(OutputStream* dst, EncryptionProperties* encryption = NULLPTR) const;
+  void WriteTo(OutputStream* dst, const std::shared_ptr<EncryptionProperties>& encryption = NULLPTR) const;
 
   // Return const-pointer to make it clear that this object is not to be copied
   const SchemaDescriptor* schema() const;
@@ -211,7 +211,7 @@ class PARQUET_EXPORT FileMetaData {
  private:
   friend FileMetaDataBuilder;
   explicit FileMetaData(const void* serialized_metadata, uint32_t* metadata_len,
-                        std::shared_ptr<EncryptionProperties> encryption = NULLPTR);
+                        const std::shared_ptr<EncryptionProperties>& encryption = NULLPTR);
 
   // PIMPL Idiom
   FileMetaData();
