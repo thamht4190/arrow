@@ -108,7 +108,7 @@ class SerializedPageReader : public PageReader {
  public:
   SerializedPageReader(std::unique_ptr<InputStream> stream, int64_t total_num_rows,
                        Compression::type codec,
-                       std::shared_ptr<EncryptionProperties> encryption,
+                       const std::shared_ptr<EncryptionProperties>& encryption,
                        ::arrow::MemoryPool* pool)
       : stream_(std::move(stream)),
         decompression_buffer_(AllocateBuffer(pool, 0)),
@@ -172,7 +172,7 @@ std::shared_ptr<Page> SerializedPageReader::NextPage() {
       header_size = static_cast<uint32_t>(bytes_available);
       try {
         DeserializeThriftMsg(buffer, &header_size, &current_page_header_,
-                             encryption_.get());
+                             encryption_);
         break;
       } catch (std::exception& e) {
         // Failed to deserialize. Double the allowed page header size and try again
@@ -279,7 +279,7 @@ std::shared_ptr<Page> SerializedPageReader::NextPage() {
 
 std::unique_ptr<PageReader> PageReader::Open(
     std::unique_ptr<InputStream> stream, int64_t total_num_rows, Compression::type codec,
-    std::shared_ptr<EncryptionProperties> encryption, ::arrow::MemoryPool* pool) {
+    const std::shared_ptr<EncryptionProperties>& encryption, ::arrow::MemoryPool* pool) {
   return std::unique_ptr<PageReader>(new SerializedPageReader(
       std::move(stream), total_num_rows, codec, encryption, pool));
 }

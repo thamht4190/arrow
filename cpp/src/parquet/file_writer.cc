@@ -273,7 +273,7 @@ class FileSerializer : public ParquetFileWriter::Contents {
 
         std::shared_ptr<EncryptionProperties> footer_encryption =
           file_encryption->GetFooterEncryptionProperties();
-        WriteFileMetaData(*file_metadata_, sink_.get(), footer_encryption.get());
+        WriteFileMetaData(*file_metadata_, sink_.get(), footer_encryption);
         uint32_t footer_and_crypto_len = static_cast<uint32_t>(sink_->Tell() - metadata_start);
         sink_->Write(reinterpret_cast<uint8_t*>(&footer_and_crypto_len), 4);
 
@@ -384,7 +384,7 @@ std::unique_ptr<ParquetFileWriter> ParquetFileWriter::Open(
 }
 
 void WriteFileMetaData(const FileMetaData& file_metadata, OutputStream* sink,
-                       EncryptionProperties* footer_encryption) {
+                       const std::shared_ptr<EncryptionProperties>& footer_encryption) {
   if (footer_encryption == nullptr) {
     // Write MetaData
     uint32_t metadata_len = static_cast<uint32_t>(sink->Tell());
