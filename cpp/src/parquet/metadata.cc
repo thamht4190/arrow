@@ -380,6 +380,10 @@ class RowGroupMetaData::RowGroupMetaDataImpl {
 
   inline int64_t total_byte_size() const { return row_group_->total_byte_size; }
 
+  inline int64_t file_offset() const { return row_group_->file_offset; }
+
+  inline int64_t total_compressed_size() const { return row_group_->total_compressed_size; }
+
   inline const SchemaDescriptor* schema() const { return schema_; }
 
   std::unique_ptr<ColumnChunkMetaData> ColumnChunk(int i, FileDecryptionProperties* file_decryption = NULLPTR,
@@ -968,6 +972,7 @@ class ColumnChunkMetaDataBuilder::ColumnChunkMetaDataBuilderImpl {
   }
 
   const ColumnDescriptor* descr() const { return column_; }
+  int64_t total_compressed_size() const { return column_metadata_.total_compressed_size; }
 
  private:
   void Init(format::ColumnChunk* column_chunk) {
@@ -1035,6 +1040,10 @@ const ColumnDescriptor* ColumnChunkMetaDataBuilder::descr() const {
   return impl_->descr();
 }
 
+int64_t ColumnChunkMetaDataBuilder::total_compressed_size() const {
+  return impl_->total_compressed_size();
+}
+
 void ColumnChunkMetaDataBuilder::SetStatistics(bool is_signed,
                                                const EncodedStatistics& result) {
   impl_->SetStatistics(is_signed, result);
@@ -1088,6 +1097,26 @@ class RowGroupMetaDataBuilder::RowGroupMetaDataBuilderImpl {
     //        columns";
 
     //    row_group_->__set_total_byte_size(total_byte_size);
+
+    int64_t file_offset = 0;
+    int64_t total_compressed_size = 0;
+
+    for (int i = 0; i < schema_->num_columns(); i++) {
+      if (!(row_group_->columns[i].file_offset >= 0)) {
+        std::stringstream ss;
+        ss << "Column " << i << " is not complete.";
+        throw ParquetException(ss.str());
+      }
+      if (i == 0) {
+        file_offset = row_group_->columns[0].file_offset;
+      }
+      // sometimes column metadata is encrypted and not available to read,
+      // so we must get total_compressed_size from column builder
+      total_compressed_size += column_builders_[i]->total_compressed_size();
+    }
+
+    row_group_->__set_file_offset(file_offset);
+    row_group_->__set_total_compressed_size(total_compressed_size);
     row_group_->__set_total_byte_size(total_bytes_written);
   }
 
