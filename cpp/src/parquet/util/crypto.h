@@ -23,19 +23,19 @@
 #include "parquet/properties.h"
 #include "parquet/types.h"
 
-using parquet::ParquetCipher;
+using parquet::Encryption;
 using parquet::EncryptionProperties;
 
 namespace parquet_encryption {
 
-int Encrypt(ParquetCipher::type alg_id, bool metadata, const uint8_t* plaintext,
+int Encrypt(Encryption::type alg_id, bool metadata, const uint8_t* plaintext,
             int plaintext_len, uint8_t* key, int key_len, uint8_t* aad, int aad_len,
             uint8_t* ciphertext);
 
 int Encrypt(std::shared_ptr<EncryptionProperties> encryption_props, bool metadata,
             const uint8_t* plaintext, int plaintext_len, uint8_t* ciphertext);
 
-int Decrypt(ParquetCipher::type alg_id, bool metadata, const uint8_t* ciphertext,
+int Decrypt(Encryption::type alg_id, bool metadata, const uint8_t* ciphertext,
             int ciphertext_len, uint8_t* key, int key_len, uint8_t* aad, int aad_len,
             uint8_t* plaintext);
 
