@@ -230,16 +230,16 @@ int ctr_encrypt(const uint8_t* plaintext, int plaintext_len, uint8_t* key, int k
   return ctrIvLen + ciphertext_len;
 }
 
-int Encrypt(ParquetCipher::type alg_id, bool metadata, const uint8_t* plaintext,
+int Encrypt(Encryption::type alg_id, bool metadata, const uint8_t* plaintext,
             int plaintext_len, uint8_t* key, int key_len, uint8_t* aad, int aad_len,
             uint8_t* ciphertext) {
-  if (ParquetCipher::AES_GCM_CTR_V1 != alg_id && ParquetCipher::AES_GCM_CTR_V1 != alg_id) {
+  if (Encryption::AES_GCM_V1 != alg_id && Encryption::AES_GCM_CTR_V1 != alg_id) {
     std::stringstream ss;
     ss << "Crypto algorithm " << alg_id << " is not supported";
     throw ParquetException(ss.str());
   }
 
-  if (metadata || (ParquetCipher::AES_GCM_CTR_V1 == alg_id)) {
+  if (metadata || (Encryption::AES_GCM_V1 == alg_id)) {
     return gcm_encrypt(plaintext, plaintext_len, key, key_len, aad, aad_len, ciphertext);
   }
 
@@ -341,16 +341,16 @@ int ctr_decrypt(const uint8_t* ciphertext, int ciphertext_len, uint8_t* key, int
   return plaintext_len;
 }
 
-int Decrypt(ParquetCipher::type alg_id, bool metadata, const uint8_t* ciphertext,
+int Decrypt(Encryption::type alg_id, bool metadata, const uint8_t* ciphertext,
             int ciphertext_len, uint8_t* key, int key_len, uint8_t* aad, int aad_len,
             uint8_t* plaintext) {
-  if (ParquetCipher::AES_GCM_CTR_V1 != alg_id && ParquetCipher::AES_GCM_CTR_V1 != alg_id) {
+  if (Encryption::AES_GCM_V1 != alg_id && Encryption::AES_GCM_CTR_V1 != alg_id) {
     std::stringstream ss;
     ss << "Crypto algorithm " << alg_id << " is not supported";
     throw ParquetException(ss.str());
   }
 
-  if (metadata || (ParquetCipher::AES_GCM_CTR_V1 == alg_id)) {
+  if (metadata || (Encryption::AES_GCM_V1 == alg_id)) {
     return gcm_decrypt(ciphertext, ciphertext_len, key, key_len, aad, aad_len, plaintext);
   }
 
