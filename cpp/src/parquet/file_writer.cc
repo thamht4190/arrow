@@ -23,6 +23,7 @@
 #include "parquet/column_writer.h"
 #include "parquet/schema.h"
 #include "parquet/util/memory.h"
+#include "parquet/util/crypto.h"
 
 using arrow::MemoryPool;
 
@@ -76,13 +77,16 @@ inline void ThrowRowsMisMatchError(int col, int64_t prev, int64_t curr) {
 // RowGroupWriter::Contents implementation for the Parquet file specification
 class RowGroupSerializer : public RowGroupWriter::Contents {
  public:
-  RowGroupSerializer(OutputStream* sink, RowGroupMetaDataBuilder* metadata,
+  RowGroupSerializer(OutputStream* sink, RowGroupMetaDataBuilder* metadata, 
+                     int16_t row_group_ordinal,
                      const WriterProperties* properties, bool buffered_row_group = false)
+
       : sink_(sink),
         metadata_(metadata),
         properties_(properties),
         total_bytes_written_(0),
         closed_(false),
+        row_group_ordinal_ (row_group_ordinal),
         current_column_index_(0),
         num_rows_(0),
         buffered_row_group_(buffered_row_group) {
@@ -123,8 +127,10 @@ class RowGroupSerializer : public RowGroupWriter::Contents {
     const ColumnDescriptor* column_descr = col_meta->descr();
     std::unique_ptr<PageWriter> pager =
         PageWriter::Open(sink_, properties_->compression(column_descr->path()),
-                         properties_->encryption(column_descr->path()), col_meta,  // TODO
-                         properties_->memory_pool());
+                         properties_->encryption(column_descr->path()), col_meta,  
+                         row_group_ordinal_, (int16_t)(current_column_index_-1),
+			 properties_->memory_pool());
+
     column_writers_[0] = ColumnWriter::Make(col_meta, std::move(pager), properties_);
     return column_writers_[0].get();
   }
@@ -179,7 +185,7 @@ class RowGroupSerializer : public RowGroupWriter::Contents {
 
       // Ensures all columns have been written
       metadata_->set_num_rows(num_rows_);
-      metadata_->Finish(total_bytes_written_);
+      metadata_->Finish(total_bytes_written_, row_group_ordinal_);
     }
   }
 
@@ -189,6 +195,7 @@ class RowGroupSerializer : public RowGroupWriter::Contents {
   const WriterProperties* properties_;
   int64_t total_bytes_written_;
   bool closed_;
+  int16_t row_group_ordinal_;
   int current_column_index_;
   mutable int64_t num_rows_;
   bool buffered_row_group_;
@@ -220,9 +227,12 @@ class RowGroupSerializer : public RowGroupWriter::Contents {
       auto col_meta = metadata_->NextColumnChunk();
       const ColumnDescriptor* column_descr = col_meta->descr();
       std::unique_ptr<PageWriter> pager =
-          PageWriter::Open(sink_, properties_->compression(column_descr->path()),
+	  PageWriter::Open(sink_, properties_->compression(column_descr->path()),
                            properties_->encryption(column_descr->path()), col_meta,
+			   (int16_t)row_group_ordinal_,
+			   (int16_t)current_column_index_,
                            properties_->memory_pool(), buffered_row_group_);
+
       column_writers_.push_back(
           ColumnWriter::Make(col_meta, std::move(pager), properties_));
     }
@@ -274,28 +284,37 @@ class FileSerializer : public ParquetFileWriter::Contents {
           uint64_t metadata_start = static_cast<uint64_t>(sink_->Tell());
           auto crypto_metadata = metadata_->GetCryptoMetaData();
           WriteFileCryptoMetaData(*crypto_metadata, sink_.get());
-
-          ParquetCipher::type algorithm = file_encryption->getAlgorithm().algorithm;
-          // TODO: Fix AAD calculation
+	  
+	  ParquetCipher::type algorithm = file_encryption->getAlgorithm().algorithm;
+          std::string aad = parquet_encryption::createFooterAAD(file_encryption->getFileAAD());
           std::shared_ptr<EncryptionProperties> footer_encryption =
             std::make_shared<EncryptionProperties>(algorithm,
-						   file_encryption->getFooterEncryptionKey());
+						   file_encryption->getFooterEncryptionKey(),
+						   file_encryption->getFileAAD(), aad);
           WriteFileMetaData(*metadata, sink_.get(), footer_encryption, true);
           uint32_t footer_and_crypto_len = static_cast<uint32_t>(sink_->Tell() - metadata_start);
           sink_->Write(reinterpret_cast<uint8_t*>(&footer_and_crypto_len), 4);
-	  
           sink_->Write(PARQUET_EMAGIC, 4);
         }
         else {
           // footer plain mode
           EncryptionAlgorithm signing_encryption;
+          EncryptionAlgorithm algo =  file_encryption->getAlgorithm();
+
+          signing_encryption.aad.aad_file_unique = algo.aad.aad_file_unique;
+          signing_encryption.aad.supply_aad_prefix = algo.aad.supply_aad_prefix;
+          if (!algo.aad.supply_aad_prefix)
+            signing_encryption.aad.aad_prefix = algo.aad.aad_prefix;
           signing_encryption.algorithm = ParquetCipher::AES_GCM_V1;
-          auto metadata = metadata_->Finish(&signing_encryption, file_encryption->getFooterSigningKeyMetadata ());
-          // TODO: Fix AAD calculation
-	  ParquetCipher::type algorithm = file_encryption->getAlgorithm().algorithm;
+
+          auto metadata = metadata_->Finish(&signing_encryption,
+					    file_encryption->getFooterSigningKeyMetadata ());
+	  ParquetCipher::type algorithm = algo.algorithm;
+	  std::string aad = parquet_encryption::createFooterAAD(file_encryption->getFileAAD());	  
 	  std::shared_ptr<EncryptionProperties> footer_encryption =
 	    std::make_shared<EncryptionProperties>(algorithm,
-						   file_encryption->getFooterSigningKey());
+						   file_encryption->getFooterSigningKey(),
+						   file_encryption->getFileAAD(), aad);
           WriteFileMetaData(*metadata, sink_.get(), footer_encryption, false);
         }
       }
@@ -321,7 +340,9 @@ class FileSerializer : public ParquetFileWriter::Contents {
     num_row_groups_++;
     auto rg_metadata = metadata_->AppendRowGroup();
     std::unique_ptr<RowGroupWriter::Contents> contents(new RowGroupSerializer(
-        sink_.get(), rg_metadata, properties_.get(), buffered_row_group));
+        sink_.get(), rg_metadata, (int16_t)(num_row_groups_-1), properties_.get(), 
+        buffered_row_group));
+
     row_group_writer_.reset(new RowGroupWriter(std::move(contents)));
     return row_group_writer_.get();
   }
