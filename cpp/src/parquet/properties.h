@@ -22,7 +22,6 @@
 #include <string>
 #include <unordered_map>
 #include <random>
-#include <openssl/rand.h>
 
 #include "parquet/encryption.h"
 #include "parquet/exception.h"
@@ -713,12 +712,17 @@ class PARQUET_EXPORT FileEncryptionProperties {
              || footer_key.length() == 24
              || footer_key.length() == 32);
 
-      uint8_t aad_file_unique[AAD_FILE_UNIQUE_LENGTH];
-      memset(aad_file_unique, 0, AAD_FILE_UNIQUE_LENGTH);
-      RAND_bytes(aad_file_unique, sizeof(AAD_FILE_UNIQUE_LENGTH));
+      std::vector<uint8_t> buffer(AAD_FILE_UNIQUE_LENGTH);
+      std::random_device rd;
+      std::default_random_engine gen(rd());
+      std::uniform_int_distribution<uint32_t> d(
+          0, std::numeric_limits<uint8_t>::max());
+      std::generate(buffer.data(),
+                    buffer.data() + AAD_FILE_UNIQUE_LENGTH,
+                    [&d, &gen] { return static_cast<uint8_t>(d(gen)); });
       std::string aad_file_unique_str(
-          reinterpret_cast<char const*>(aad_file_unique),
-          AAD_FILE_UNIQUE_LENGTH) ;
+          reinterpret_cast<char const*>(buffer.data()),
+          AAD_FILE_UNIQUE_LENGTH);
 
       bool supply_aad_prefix = false;
       if (aad_prefix.empty())
