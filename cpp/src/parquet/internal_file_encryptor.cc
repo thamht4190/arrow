@@ -89,7 +89,8 @@ std::shared_ptr<Encryptor> InternalFileEncryptor::InternalFileEncryptor::GetColu
   
   std::string file_aad = properties_->getFileAAD();
 
-  // TODO: aad
+  // AAD will be calculated using file_aad right before accessing
+  // the encrypted module.
   return std::make_shared<Encryptor>(aes_encryptor, key, file_aad, "");
 }
 

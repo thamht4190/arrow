@@ -170,9 +170,9 @@ class PARQUET_EXPORT EncryptionProperties {
 
  private:
   ParquetCipher::type algorithm_;  // encryption algorithm
-  std::string key_;             // encryption key, should have 16, 24, 32-byte length
-  std::string file_aad_;
-  std::string aad_;             // encryption additional authenticated data
+  std::string key_;                // encryption key, should have 16, 24, 32-byte length
+  std::string file_aad_;           // combination of AAD prefix (if provided) and random unique file AAD
+  std::string aad_;                // encryption module additional authenticated data
   static inline uint8_t* str2bytes(const std::string& str) {
     if (str.empty()) return NULLPTR;
 
