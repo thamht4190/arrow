@@ -101,17 +101,9 @@ class SerializedRowGroup : public RowGroupReader::Contents {
   const ReaderProperties* properties() const override { return &properties_; }
 
   std::unique_ptr<PageReader> GetColumnPageReader(int i) override {
-    EncryptionAlgorithm algorithm;
-    if (file_crypto_metadata_) {
-      algorithm = file_crypto_metadata_->encryption_algorithm();
-    }
-    else if (file_metadata_->is_plaintext_mode()) {
-      algorithm = file_metadata_->encryption_algorithm();
-    }
     // Read column chunk from the file
     auto col = row_group_metadata_->ColumnChunk(i, row_group_ordinal_,
-                                                properties_.file_decryption(),
-                                                &algorithm, file_decryptor_);
+                                                file_decryptor_);
     int64_t col_start = col->data_page_offset();
     if (col->has_dictionary_page() && col_start > col->dictionary_page_offset()) {
       col_start = col->dictionary_page_offset();
@@ -138,7 +130,7 @@ class SerializedRowGroup : public RowGroupReader::Contents {
 
     // file is unencrypted
     // or file is encrypted but column is unencrypted
-    if ((!file_crypto_metadata_ && !file_metadata_->is_plaintext_mode()) || !crypto_metadata) {
+    if (!crypto_metadata) {
       encrypted = false;
     }
 
@@ -151,26 +143,11 @@ class SerializedRowGroup : public RowGroupReader::Contents {
     }
 
     // the column is encrypted
-    std::string aad = parquet_encryption::createModuleAAD(
-        properties_.fileAAD(),
-        parquet_encryption::ColumnMetaData,
-        row_group_ordinal_,
-        (int16_t)i, (int16_t)-1);
 
-    ParquetCipher::type footer_algorithm = file_metadata_->is_plaintext_mode()
-                          ? file_metadata_->encryption_algorithm().algorithm
-                          : file_crypto_metadata_->encryption_algorithm().algorithm;
-    
     // the column is encrypted with footer key
     if (crypto_metadata->encrypted_with_footer_key()) {
-      const std::string& footer_key_metadata = file_metadata_->is_plaintext_mode()
-                                  ? file_metadata_->footer_signing_key_metadata()
-                                  : file_crypto_metadata_->key_metadata();
-
-      auto meta_decryptor = file_decryptor_->GetFooterDecryptorForColumnMeta(
-          footer_algorithm, footer_key_metadata, aad);
-      auto data_decryptor = file_decryptor_->GetFooterDecryptorForColumnData(
-          footer_algorithm, footer_key_metadata, aad);
+      auto meta_decryptor = file_decryptor_->GetFooterDecryptorForColumnMeta();
+      auto data_decryptor = file_decryptor_->GetFooterDecryptorForColumnData();
 
       return PageReader::Open(std::move(stream), col->num_values(),
                               col->compression(),
@@ -179,19 +156,18 @@ class SerializedRowGroup : public RowGroupReader::Contents {
                               meta_decryptor, data_decryptor);
     }
 
-    // file is non-uniform encrypted and the column
-    // is encrypted with its own key
+    // file is encrypted and the column is encrypted with its own key
 
     std::string column_key_metadata = crypto_metadata->key_metadata();
     std::shared_ptr<schema::ColumnPath> column_path =
         std::make_shared<schema::ColumnPath>(crypto_metadata->path_in_schema());
-    
+
     auto meta_decryptor = file_decryptor_->GetColumnMetaDecryptor(
-        column_path, footer_algorithm,
-        column_key_metadata, aad);
+        column_path,
+        column_key_metadata);
     auto data_decryptor = file_decryptor_->GetColumnDataDecryptor(
-        column_path, footer_algorithm,
-        column_key_metadata, aad);
+        column_path,
+        column_key_metadata);
 
     return PageReader::Open(std::move(stream), col->num_values(),
                             col->compression(),
@@ -289,52 +265,46 @@ class SerializedFile : public ParquetFileReader::Contents {
       uint32_t read_metadata_len = metadata_len;
       file_metadata_ = FileMetaData::Make(metadata_buffer->data(), &read_metadata_len);
 
-      if (file_metadata_->is_plaintext_mode()) {
-        auto file_decryption = properties_.file_decryption();
-        file_decryptor_.reset(new InternalFileDecryptor(file_decryption));
-        if (file_decryption == nullptr) {
+      if (file_metadata_->is_encryption_algorithm_set()) {
+        auto file_decryption_properties = properties_.file_decryption_properties();
+        if (file_decryption_properties == NULLPTR) {
           throw ParquetException("No decryption properties are provided");
         }
+        file_decryptor_.reset(new InternalFileDecryptor(file_decryption_properties));
+
+        std::string aad_prefix = file_decryption_properties->getAADPrefix();
 
         EncryptionAlgorithm algo = file_metadata_->encryption_algorithm();
-        bool supply_aad_prefix = algo.aad.supply_aad_prefix;
-        std::string aad_file_unique = algo.aad.aad_file_unique;
-        std::string aad_prefix = algo.aad.aad_prefix;
-        if (algo.algorithm != ParquetCipher::AES_GCM_CTR_V1
-            && algo.algorithm != ParquetCipher::AES_GCM_V1)
-          throw ParquetException("Unsupported algorithm");
-        if (!file_decryption->getAADPrefix().empty()) {
-          if (file_decryption->getAADPrefix().compare(aad_prefix) != 0) {
-            throw ParquetException("ADD Prefix in file and "
-                                   "in properties is not the same");
+        if (!algo.aad.aad_prefix.empty()) {
+          if (!aad_prefix.empty()) {
+            if (aad_prefix.compare(algo.aad.aad_prefix) != 0) {
+              throw ParquetException("ADD Prefix in file and "
+                                     "in properties is not the same");
+            }
           }
+          aad_prefix = algo.aad.aad_prefix;
           std::shared_ptr<AADPrefixVerifier> aad_prefix_verifier =
-            file_decryption->getAADPrefixVerifier();
+            file_decryption_properties->getAADPrefixVerifier();
           if (aad_prefix_verifier != NULLPTR)
             aad_prefix_verifier->check(aad_prefix);
         }
-        if (supply_aad_prefix && file_decryption->getAADPrefix().empty()) {
+        if (algo.aad.supply_aad_prefix && aad_prefix.empty()) {
           throw ParquetException("AAD prefix used for file encryption, "
                                  "but not stored in file and not supplied "
                                  "in decryption properties");
         }
-        std::string fileAAD;
-        if (!supply_aad_prefix)
-          fileAAD = aad_prefix + aad_file_unique;
-        else
-          fileAAD = file_decryption->getAADPrefix() + aad_file_unique;
+        std::string fileAAD = aad_prefix + algo.aad.aad_file_unique;
 
         file_decryptor_->file_aad(fileAAD);
-        if (file_decryption->checkFooterIntegrity()) {
+        file_decryptor_->algorithm(algo.algorithm);
+        file_decryptor_->footer_key_metadata(file_metadata_->footer_signing_key_metadata());
+        if (file_decryption_properties->checkFooterIntegrity()) {
           if (metadata_len - read_metadata_len != 28) {
             throw ParquetException("Invalid parquet file. Cannot verify plaintext"
            "mode footer.");
           }
 
-          std::string footer_key_metadata = file_metadata_->footer_signing_key_metadata();
-          auto encryptor = file_decryptor_->GetFooterSigningEncryptor(
-              file_metadata_->encryption_algorithm().algorithm,
-              footer_key_metadata);
+          auto encryptor = file_decryptor_->GetFooterSigningEncryptor();
           if (! file_metadata_->verify(encryptor, metadata_buffer->data()
               + read_metadata_len)) {
             throw ParquetException("Invalid parquet file. Could not verify plaintext"
@@ -370,45 +340,43 @@ class SerializedFile : public ParquetFileReader::Contents {
           throw ParquetException("Invalid parquet file. Could not read metadata bytes.");
         }
       }
-      auto file_decryption = properties_.file_decryption();
-      if (file_decryption == nullptr) {
+      auto file_decryption_properties = properties_.file_decryption_properties();
+      if (file_decryption_properties == nullptr) {
         throw ParquetException("No decryption properties are provided. Could not read "
                                "encrypted footer metadata");
       }
-      file_decryptor_.reset(new InternalFileDecryptor(file_decryption));
+      file_decryptor_.reset(new InternalFileDecryptor(file_decryption_properties));
       uint32_t crypto_metadata_len = footer_len;
       file_crypto_metadata_ =
         FileCryptoMetaData::Make(crypto_metadata_buffer->data(), &crypto_metadata_len);
       EncryptionAlgorithm algo = file_crypto_metadata_->encryption_algorithm();
-      bool supply_aad_prefix = algo.aad.supply_aad_prefix;
-      std::string aad_file_unique = algo.aad.aad_file_unique;
-      std::string aad_prefix = algo.aad.aad_prefix;
-      if (algo.algorithm != ParquetCipher::AES_GCM_CTR_V1 
-          && algo.algorithm != ParquetCipher::AES_GCM_V1)
-        throw ParquetException("Unsupported algorithm");
-      if (!file_decryption->getAADPrefix().empty()) {
-        if (file_decryption->getAADPrefix().compare(aad_prefix) != 0) {
-          throw ParquetException("ADD Prefix in file and in properties "
-                                 "is not the same");
+
+      std::string aad_prefix = file_decryption_properties->getAADPrefix();
+
+      if (!algo.aad.aad_prefix.empty()) {
+        if (!aad_prefix.empty()) {
+          if (aad_prefix.compare(algo.aad.aad_prefix) != 0) {
+            throw ParquetException("ADD Prefix in file and in properties "
+                                   "is not the same");
+          }
         }
+        aad_prefix = algo.aad.aad_prefix;
         std::shared_ptr<AADPrefixVerifier> aad_prefix_verifier =
-          file_decryption->getAADPrefixVerifier();
+          file_decryption_properties->getAADPrefixVerifier();
         if (aad_prefix_verifier != NULLPTR)
           aad_prefix_verifier->check(aad_prefix);
       }
-      if (supply_aad_prefix && file_decryption->getAADPrefix().empty()) {
+      if (algo.aad.supply_aad_prefix && aad_prefix.empty()) {
         throw ParquetException("AAD prefix used for file encryption, "
                                "but not stored in file and not supplied "
                                "in decryption properties");
       }
-      std::string fileAAD;
-      if (!supply_aad_prefix)
-        fileAAD = aad_prefix + aad_file_unique;
-      else
-        fileAAD = file_decryption->getAADPrefix() + aad_file_unique;
+      std::string fileAAD = aad_prefix + algo.aad.aad_file_unique;
       // save fileAAD for later use
       file_decryptor_->file_aad(fileAAD);
-      
+      file_decryptor_->algorithm(algo.algorithm);
+      file_decryptor_->footer_key_metadata(file_crypto_metadata_->key_metadata());
+
       int64_t metadata_offset = file_size - FOOTER_SIZE - footer_len + crypto_metadata_len;
       uint32_t metadata_len = footer_len - crypto_metadata_len;
       std::shared_ptr<ResizableBuffer> metadata_buffer =
@@ -420,12 +388,7 @@ class SerializedFile : public ParquetFileReader::Contents {
                                "Could not read footer metadata bytes.");
       }
 
-      // get footer key metadata
-      std::string footer_key_metadata = file_crypto_metadata_->key_metadata();
-      
-      auto footer_decryptor = file_decryptor_->GetFooterDecryptor(
-          file_crypto_metadata_->encryption_algorithm().algorithm,
-          footer_key_metadata);
+      auto footer_decryptor = file_decryptor_->GetFooterDecryptor();
       file_metadata_ = FileMetaData::Make(metadata_buffer->data(),
                                           &metadata_len,
                                           footer_decryptor);

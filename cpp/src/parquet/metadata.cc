@@ -166,8 +166,6 @@ class ColumnChunkMetaData::ColumnChunkMetaDataImpl {
       int16_t row_group_ordinal,
       int16_t column_ordinal,
       const ApplicationVersion* writer_version,
-      FileDecryptionProperties* file_decryption = NULLPTR,
-      const EncryptionAlgorithm* algorithm = NULLPTR,
       InternalFileDecryptor* file_decryptor = NULLPTR)
     : column_(column), descr_(descr), writer_version_(writer_version) {
     metadata_ = column->meta_data;
@@ -176,26 +174,25 @@ class ColumnChunkMetaData::ColumnChunkMetaDataImpl {
       format::ColumnCryptoMetaData ccmd = column->crypto_metadata;
 
       if (ccmd.__isset.ENCRYPTION_WITH_COLUMN_KEY) {
-        if (file_decryption == NULLPTR) {
-          throw ParquetException("Cannot decrypt ColumnMetadata. FileDecryptionProperties must be provided.");
+        if (file_decryptor->properties() == NULLPTR) {
+          throw ParquetException("Cannot decrypt ColumnMetadata. "
+                                 "FileDecryptionProperties must be provided.");
         }
         // should decrypt metadata
         std::shared_ptr<schema::ColumnPath> path =
           std::make_shared<schema::ColumnPath>(
               ccmd.ENCRYPTION_WITH_COLUMN_KEY.path_in_schema);
         std::string key_metadata = ccmd.ENCRYPTION_WITH_COLUMN_KEY.key_metadata;
-        
-        DCHECK(algorithm != NULLPTR);
+
         DCHECK(file_decryptor != NULLPTR);
-        
-        std::string aad = parquet_encryption::createModuleAAD(
+
+        std::string aad_column_metadata = parquet_encryption::createModuleAAD(
             file_decryptor->file_aad(),
             parquet_encryption::ColumnMetaData,
             row_group_ordinal,
             column_ordinal, (int16_t)-1);
         auto decryptor = file_decryptor->GetColumnMetaDecryptor(
-            path, algorithm->algorithm,
-            key_metadata, aad);
+            path, key_metadata, aad_column_metadata);
         uint32_t len = static_cast<uint32_t>(column->encrypted_column_metadata.size());
         DeserializeThriftMsg(
             reinterpret_cast<const uint8_t*>(
@@ -303,13 +300,11 @@ std::unique_ptr<ColumnChunkMetaData> ColumnChunkMetaData::Make(
     const void* metadata, const ColumnDescriptor* descr,
     int16_t row_group_ordinal, int16_t column_ordinal,
     const ApplicationVersion* writer_version,
-    FileDecryptionProperties* file_decryption,
-    const EncryptionAlgorithm* algorithm,
     InternalFileDecryptor* file_decryptor) {
   return std::unique_ptr<ColumnChunkMetaData>(
       new ColumnChunkMetaData(metadata, descr, row_group_ordinal,
                               column_ordinal, writer_version,
-                              file_decryption, algorithm, file_decryptor));
+                              file_decryptor));
 }
 
 ColumnChunkMetaData::ColumnChunkMetaData(
@@ -318,8 +313,6 @@ ColumnChunkMetaData::ColumnChunkMetaData(
     int16_t row_group_ordinal,
     int16_t column_ordinal,
     const ApplicationVersion* writer_version,
-    FileDecryptionProperties* file_decryption,
-    const EncryptionAlgorithm* algorithm,
     InternalFileDecryptor* file_decryptor)
   : impl_{std::unique_ptr<ColumnChunkMetaDataImpl>(new ColumnChunkMetaDataImpl(
       reinterpret_cast<const format::ColumnChunk*>(metadata),
@@ -327,7 +320,6 @@ ColumnChunkMetaData::ColumnChunkMetaData(
       row_group_ordinal,
       column_ordinal,
       writer_version,
-      file_decryption, algorithm,
       file_decryptor))} {}
 ColumnChunkMetaData::~ColumnChunkMetaData() {}
 // column chunk
@@ -410,8 +402,6 @@ class RowGroupMetaData::RowGroupMetaDataImpl {
 
   std::unique_ptr<ColumnChunkMetaData> ColumnChunk(
       int i, int16_t row_group_ordinal,
-      FileDecryptionProperties* file_decryption = NULLPTR,
-      const EncryptionAlgorithm* algorithm = NULLPTR,
       InternalFileDecryptor* file_decryptor = NULLPTR) {
     if (!(i < num_columns())) {
       std::stringstream ss;
@@ -422,8 +412,7 @@ class RowGroupMetaData::RowGroupMetaDataImpl {
     return ColumnChunkMetaData::Make(
         &row_group_->columns[i], schema_->Column(i),
         row_group_ordinal, (int16_t)i,
-        writer_version_, file_decryption, algorithm,
-        file_decryptor);
+        writer_version_, file_decryptor);
   }
 
  private:
@@ -455,10 +444,8 @@ int64_t RowGroupMetaData::total_byte_size() const { return impl_->total_byte_siz
 const SchemaDescriptor* RowGroupMetaData::schema() const { return impl_->schema(); }
 
 std::unique_ptr<ColumnChunkMetaData> RowGroupMetaData::ColumnChunk(
-    int i, int16_t row_group_ordinal, FileDecryptionProperties* file_decryption,
-    const EncryptionAlgorithm* algorithm, InternalFileDecryptor* file_decryptor) const {
-  return impl_->ColumnChunk(i, row_group_ordinal, file_decryption, algorithm,
-                            file_decryptor);
+    int i, int16_t row_group_ordinal, InternalFileDecryptor* file_decryptor) const {
+  return impl_->ColumnChunk(i, row_group_ordinal, file_decryptor);
 }
 
 // file metadata
@@ -518,7 +505,7 @@ class FileMetaData::FileMetaDataImpl {
   inline int num_schema_elements() const {
     return static_cast<int>(metadata_->schema.size());
   }
-  inline bool is_plaintext_mode() const { return metadata_->__isset.encryption_algorithm; }
+  inline bool is_encryption_algorithm_set() const { return metadata_->__isset.encryption_algorithm; }
   inline EncryptionAlgorithm encryption_algorithm() {
     return FromThrift(metadata_->encryption_algorithm);
   }
@@ -531,7 +518,7 @@ class FileMetaData::FileMetaDataImpl {
   void WriteTo(OutputStream* dst,
                const std::shared_ptr<Encryptor>& encryptor) const {
     ThriftSerializer serializer;
-    if (is_plaintext_mode()) {
+    if (is_encryption_algorithm_set()) {
       uint8_t* serialized_data;
       uint32_t serialized_len;
       serializer.SerializeToBuffer(metadata_.get(), &serialized_len, &serialized_data);
@@ -648,7 +635,7 @@ int64_t FileMetaData::num_rows() const { return impl_->num_rows(); }
 
 int FileMetaData::num_row_groups() const { return impl_->num_row_groups(); }
 
-bool FileMetaData::is_plaintext_mode() const { return impl_->is_plaintext_mode(); }
+bool FileMetaData::is_encryption_algorithm_set() const { return impl_->is_encryption_algorithm_set(); }
 
 EncryptionAlgorithm FileMetaData::encryption_algorithm() const {
   return impl_->encryption_algorithm();
