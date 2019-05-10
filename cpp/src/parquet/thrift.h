@@ -28,6 +28,7 @@
 #include <memory>
 #endif
 #include <string>
+#include <vector>
 
 // TCompactProtocol requires some #defines to work right.
 #define SIGNED_RIGHT_SHIFT_IS 1
@@ -42,8 +43,8 @@
 
 #include "arrow/util/logging.h"
 #include "parquet/exception.h"
-#include "parquet/internal_file_encryptor.h"
 #include "parquet/internal_file_decryptor.h"
+#include "parquet/internal_file_encryptor.h"
 #include "parquet/statistics.h"
 #include "parquet/types.h"
 #include "parquet/util/crypto.h"
@@ -86,19 +87,13 @@ static inline Compression::type FromThrift(format::CompressionCodec::type type) 
 }
 
 static inline AadMetadata FromThrift(format::AesGcmV1 aesGcmV1) {
-  return AadMetadata {
-    aesGcmV1.aad_prefix,
-    aesGcmV1.aad_file_unique,
-    aesGcmV1.supply_aad_prefix
-  };
+  return AadMetadata{aesGcmV1.aad_prefix, aesGcmV1.aad_file_unique,
+                     aesGcmV1.supply_aad_prefix};
 }
 
 static inline AadMetadata FromThrift(format::AesGcmCtrV1 aesGcmCtrV1) {
-  return AadMetadata {
-    aesGcmCtrV1.aad_prefix,
-    aesGcmCtrV1.aad_file_unique,
-    aesGcmCtrV1.supply_aad_prefix
-  };
+  return AadMetadata{aesGcmCtrV1.aad_prefix, aesGcmCtrV1.aad_file_unique,
+                     aesGcmCtrV1.supply_aad_prefix};
 }
 
 static inline EncryptionAlgorithm FromThrift(format::EncryptionAlgorithm encryption) {
@@ -229,22 +224,20 @@ inline void DeserializeThriftMsg(const uint8_t* buf, uint32_t* len, T* deseriali
       uint8_t clenBytes[4];
       memcpy(clenBytes, buf, 4);
       clen = *(reinterpret_cast<uint32_t*>(clenBytes));
-    }
-    else {
+    } else {
       clen = *len;
     }
     // decrypt
     const uint8_t* cipherBuf = shouldReadLength ? &buf[4] : buf;
     std::vector<uint8_t> decrypted_buffer(clen - decryptor->CiphertextSizeDelta());
-    uint32_t decrypted_buffer_len = decryptor->Decrypt(
-        cipherBuf, 0, decrypted_buffer.data());
+    uint32_t decrypted_buffer_len =
+        decryptor->Decrypt(cipherBuf, 0, decrypted_buffer.data());
     if (decrypted_buffer_len <= 0) {
       throw ParquetException("Couldn't decrypt buffer\n");
     }
     *len = decrypted_buffer_len + decryptor->CiphertextSizeDelta();
     DeserializeThriftMsg(decrypted_buffer.data(), &decrypted_buffer_len,
                          deserialized_msg);
-
   }
 }
 
@@ -288,12 +281,13 @@ class ThriftSerializer {
       return static_cast<int64_t>(out_length);
     } else {
       std::vector<uint8_t> cipher_buffer(encryptor->CiphertextSizeDelta() + out_length);
-      int cipher_buffer_len = encryptor->Encrypt(out_buffer, out_length,
-                                                 cipher_buffer.data());
+      int cipher_buffer_len =
+          encryptor->Encrypt(out_buffer, out_length, cipher_buffer.data());
 
       if (cipher_buffer_len > static_cast<int>(cipher_buffer.size())) {
         std::stringstream ss;
-        ss << "cipher length is greater than cipher buffer capacity: " << cipher_buffer_len << cipher_buffer.size() << "\n";
+        ss << "cipher length is greater than cipher buffer capacity: "
+           << cipher_buffer_len << cipher_buffer.size() << "\n";
         throw ParquetException(ss.str());
       }
 
@@ -301,8 +295,7 @@ class ThriftSerializer {
         out->Write(reinterpret_cast<uint8_t*>(&cipher_buffer_len), 4);
         out->Write(cipher_buffer.data(), cipher_buffer_len);
         return cipher_buffer_len + 4;
-      }
-      else {
+      } else {
         out->Write(cipher_buffer.data(), cipher_buffer_len);
         return cipher_buffer_len;
       }

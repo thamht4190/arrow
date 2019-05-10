@@ -105,7 +105,7 @@ class TestPrimitiveWriter : public PrimitiveTypedTest<TestType> {
 
     metadata_ = ColumnChunkMetaDataBuilder::Make(writer_properties_, this->descr_);
     std::unique_ptr<PageWriter> pager =
-        PageWriter::Open(sink_.get(), column_properties.compression(), nullptr, metadata_.get());
+        PageWriter::Open(sink_.get(), column_properties.compression(), metadata_.get());
     std::shared_ptr<ColumnWriter> writer =
         ColumnWriter::Make(metadata_.get(), std::move(pager), writer_properties_.get());
     return std::static_pointer_cast<TypedColumnWriter<TestType>>(writer);
@@ -242,8 +242,8 @@ class TestPrimitiveWriter : public PrimitiveTypedTest<TestType> {
     // This is because the ColumnChunkMetaData semantics dictate the metadata object is
     // complete (no changes to the metadata buffer can be made after instantiation)
     ApplicationVersion app_version(this->writer_properties_->created_by());
-    auto metadata_accessor =
-        ColumnChunkMetaData::Make(metadata_->contents(), this->descr_, -1, -1, &app_version);
+    auto metadata_accessor = ColumnChunkMetaData::Make(
+        metadata_->contents(), this->descr_, -1, -1, &app_version);
     return metadata_accessor->is_stats_set();
   }
 
@@ -252,8 +252,8 @@ class TestPrimitiveWriter : public PrimitiveTypedTest<TestType> {
     // This is because the ColumnChunkMetaData semantics dictate the metadata object is
     // complete (no changes to the metadata buffer can be made after instantiation)
     ApplicationVersion app_version(this->writer_properties_->created_by());
-    auto metadata_accessor =
-        ColumnChunkMetaData::Make(metadata_->contents(), this->descr_, &app_version);
+    auto metadata_accessor = ColumnChunkMetaData::Make(
+        metadata_->contents(), this->descr_, -1, -1, &app_version);
     auto encoded_stats = metadata_accessor->statistics()->Encode();
     return {encoded_stats.has_min, encoded_stats.has_max};
   }
@@ -674,7 +674,7 @@ TEST(TestColumnWriter, RepeatedListsUpdateSpacedBug) {
 
   auto metadata = ColumnChunkMetaDataBuilder::Make(props, schema.Column(0));
   std::unique_ptr<PageWriter> pager =
-      PageWriter::Open(&sink, Compression::UNCOMPRESSED, nullptr, metadata.get());
+      PageWriter::Open(&sink, Compression::UNCOMPRESSED, metadata.get());
   std::shared_ptr<ColumnWriter> writer =
       ColumnWriter::Make(metadata.get(), std::move(pager), props.get());
   auto typed_writer = std::static_pointer_cast<TypedColumnWriter<Int32Type>>(writer);
