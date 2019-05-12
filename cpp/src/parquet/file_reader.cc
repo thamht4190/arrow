@@ -83,11 +83,10 @@ const RowGroupMetaData* RowGroupReader::metadata() const { return contents_->met
 class SerializedRowGroup : public RowGroupReader::Contents {
  public:
   SerializedRowGroup(RandomAccessSource* source, FileMetaData* file_metadata,
-                     FileCryptoMetaData* file_crypto_metadata, int row_group_number,
-                     const ReaderProperties& props, InternalFileDecryptor* file_decryptor)
+                     int row_group_number, const ReaderProperties& props,
+		     InternalFileDecryptor* file_decryptor)
       : source_(source),
         file_metadata_(file_metadata),
-        file_crypto_metadata_(file_crypto_metadata),
         properties_(props),
         row_group_ordinal_((int16_t)row_group_number),
         file_decryptor_(file_decryptor) {
@@ -168,7 +167,6 @@ class SerializedRowGroup : public RowGroupReader::Contents {
  private:
   RandomAccessSource* source_;
   FileMetaData* file_metadata_;
-  FileCryptoMetaData* file_crypto_metadata_;
   std::unique_ptr<RowGroupMetaData> row_group_metadata_;
   ReaderProperties properties_;
   int16_t row_group_ordinal_;
@@ -198,7 +196,7 @@ class SerializedFile : public ParquetFileReader::Contents {
 
   std::shared_ptr<RowGroupReader> GetRowGroup(int i) override {
     std::unique_ptr<SerializedRowGroup> contents(new SerializedRowGroup(
-        source_.get(), file_metadata_.get(), file_crypto_metadata_.get(), i, properties_,
+        source_.get(), file_metadata_.get(), i, properties_,
         file_decryptor_.get()));
     return std::make_shared<RowGroupReader>(std::move(contents));
   }
@@ -345,7 +343,7 @@ class SerializedFile : public ParquetFileReader::Contents {
       }
       file_decryptor_.reset(new InternalFileDecryptor(file_decryption_properties));
       uint32_t crypto_metadata_len = footer_len;
-      file_crypto_metadata_ =
+      std::shared_ptr<FileCryptoMetaData> file_crypto_metadata =
           FileCryptoMetaData::Make(crypto_metadata_buffer->data(), &crypto_metadata_len);
       EncryptionAlgorithm algo = file_crypto_metadata_->encryption_algorithm();
 
@@ -374,7 +372,7 @@ class SerializedFile : public ParquetFileReader::Contents {
       // save fileAAD for later use
       file_decryptor_->file_aad(fileAAD);
       file_decryptor_->algorithm(algo.algorithm);
-      file_decryptor_->footer_key_metadata(file_crypto_metadata_->key_metadata());
+      file_decryptor_->footer_key_metadata(file_crypto_metadata->key_metadata());
 
       int64_t metadata_offset =
           file_size - FOOTER_SIZE - footer_len + crypto_metadata_len;
@@ -400,7 +398,6 @@ class SerializedFile : public ParquetFileReader::Contents {
  private:
   std::unique_ptr<RandomAccessSource> source_;
   std::shared_ptr<FileMetaData> file_metadata_;
-  std::shared_ptr<FileCryptoMetaData> file_crypto_metadata_;
   ReaderProperties properties_;
   std::unique_ptr<InternalFileDecryptor> file_decryptor_;
 };
