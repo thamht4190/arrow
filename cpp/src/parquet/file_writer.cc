@@ -32,10 +32,6 @@ using parquet::schema::GroupNode;
 
 namespace parquet {
 
-// FIXME: copied from reader-internal.cc
-static constexpr uint8_t PARQUET_MAGIC[4] = {'P', 'A', 'R', '1'};
-static constexpr uint8_t PARQUET_EMAGIC[4] = {'P', 'A', 'R', 'E'};
-
 // ----------------------------------------------------------------------
 // RowGroupWriter public API
 

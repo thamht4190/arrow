@@ -29,6 +29,7 @@
 #include "arrow/status.h"
 #include "arrow/util/logging.h"
 
+#include "parquet/file_writer.h"
 #include "parquet/column_reader.h"
 #include "parquet/column_scanner.h"
 #include "parquet/exception.h"
@@ -45,8 +46,6 @@ namespace parquet {
 // PARQUET-978: Minimize footer reads by reading 64 KB from the end of the file
 static constexpr int64_t DEFAULT_FOOTER_READ_SIZE = 64 * 1024;
 static constexpr uint32_t FOOTER_SIZE = 8;
-static constexpr uint8_t PARQUET_MAGIC[4] = {'P', 'A', 'R', '1'};
-static constexpr uint8_t PARQUET_EMAGIC[4] = {'P', 'A', 'R', 'E'};
 
 // For PARQUET-816
 static constexpr int64_t kMaxDictHeaderSize = 100;

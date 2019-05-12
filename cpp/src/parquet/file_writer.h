@@ -46,6 +46,10 @@ namespace parquet {
 class ColumnWriter;
 class OutputStream;
 
+// FIXME: copied from reader-internal.cc
+static constexpr uint8_t PARQUET_MAGIC[4] = {'P', 'A', 'R', '1'};
+static constexpr uint8_t PARQUET_EMAGIC[4] = {'P', 'A', 'R', 'E'};
+
 class PARQUET_EXPORT RowGroupWriter {
  public:
   // Forward declare a virtual class 'Contents' to aid dependency injection and more
