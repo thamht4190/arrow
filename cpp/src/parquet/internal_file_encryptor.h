@@ -18,6 +18,7 @@
 #ifndef INTERNAL_FILE_ENCRYPTOR_H
 #define INTERNAL_FILE_ENCRYPTOR_H
 
+#include <map>
 #include <memory>
 #include <string>
 
@@ -36,7 +37,7 @@ class Encryptor {
   Encryptor(parquet_encryption::AesEncryptor* aes_encryptor, const std::string& key,
             const std::string& file_aad, const std::string& aad);
   const std::string& file_aad() { return file_aad_; }
-  void aad(const std::string& aad) { aad_ = aad; }
+  void update_aad(const std::string& aad) { aad_ = aad; }
 
   int CiphertextSizeDelta();
   int Encrypt(const uint8_t* plaintext, int plaintext_len, uint8_t* ciphertext);
@@ -61,6 +62,18 @@ class InternalFileEncryptor {
 
  private:
   FileEncryptionProperties* properties_;
+
+  std::shared_ptr<
+      std::map<std::shared_ptr<schema::ColumnPath>, std::shared_ptr<Encryptor>,
+               parquet::schema::ColumnPath::CmpColumnPath>>
+      column_data_map_;
+  std::shared_ptr<
+      std::map<std::shared_ptr<schema::ColumnPath>, std::shared_ptr<Encryptor>,
+               parquet::schema::ColumnPath::CmpColumnPath>>
+      column_metadata_map_;
+
+  std::shared_ptr<Encryptor> footer_signing_encryptor_;
+  std::shared_ptr<Encryptor> footer_encryptor_;
 
   std::unique_ptr<parquet_encryption::AesEncryptor> meta_encryptor_128_;
   std::unique_ptr<parquet_encryption::AesEncryptor> meta_encryptor_196_;
