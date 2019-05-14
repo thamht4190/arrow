@@ -278,9 +278,9 @@ class ColumnChunkMetaData::ColumnChunkMetaDataImpl {
 };
 
 std::unique_ptr<ColumnChunkMetaData> ColumnChunkMetaData::Make(
-    const void* metadata, const ColumnDescriptor* descr, int16_t row_group_ordinal,
-    int16_t column_ordinal, const ApplicationVersion* writer_version,
-    InternalFileDecryptor* file_decryptor) {
+    const void* metadata, const ColumnDescriptor* descr,
+    const ApplicationVersion* writer_version, InternalFileDecryptor* file_decryptor,
+    int16_t row_group_ordinal, int16_t column_ordinal) {
   return std::unique_ptr<ColumnChunkMetaData>(
       new ColumnChunkMetaData(metadata, descr, row_group_ordinal, column_ordinal,
                               writer_version, file_decryptor));
@@ -385,8 +385,8 @@ class RowGroupMetaData::RowGroupMetaDataImpl {
       throw ParquetException(ss.str());
     }
     return ColumnChunkMetaData::Make(&row_group_->columns[i], schema_->Column(i),
-                                     row_group_ordinal, (int16_t)i, writer_version_,
-                                     file_decryptor);
+                                     writer_version_, file_decryptor, row_group_ordinal,
+                                     (int16_t)i);
   }
 
  private:
@@ -446,7 +446,8 @@ class FileMetaData::FileMetaDataImpl {
     InitKeyValueMetadata();
   }
 
-  bool verify(std::shared_ptr<FooterSigningEncryptor> encryptor, const void* tail) {
+  bool verify_signature(std::shared_ptr<FooterSigningEncryptor> encryptor,
+                        const void* tail) {
     // serialize the footer
     uint8_t* serialized_data;
     uint32_t serialized_len = metadata_len_;
@@ -492,6 +493,8 @@ class FileMetaData::FileMetaDataImpl {
 
   void WriteTo(OutputStream* dst, const std::shared_ptr<Encryptor>& encryptor) const {
     ThriftSerializer serializer;
+    // Only in encrypted files with plaintext footers the
+    // encryption_algorithm is set in footer
     if (is_encryption_algorithm_set()) {
       uint8_t* serialized_data;
       uint32_t serialized_len;
@@ -505,12 +508,12 @@ class FileMetaData::FileMetaDataImpl {
 
       // write unencrypted footer
       dst->Write(serialized_data, serialized_len);
-      // write nonce
+      // Write signature (nonce and tag)
       dst->Write(encrypted_data.data() + 4, parquet_encryption::NonceLength);
-      // write tag
       dst->Write(encrypted_data.data() + encrypted_len - parquet_encryption::GCMTagLength,
                  parquet_encryption::GCMTagLength);
-    } else {
+    } else {  // either plaintext file (when encryptor is null)
+      // or encrypted file with encrypted footer
       serializer.Serialize(metadata_.get(), dst, encryptor, false);
     }
   }
@@ -596,9 +599,9 @@ std::unique_ptr<RowGroupMetaData> FileMetaData::RowGroup(int i) const {
   return impl_->RowGroup(i);
 }
 
-bool FileMetaData::verify(std::shared_ptr<FooterSigningEncryptor> encryptor,
-                          const void* tail) {
-  return impl_->verify(encryptor, tail);
+bool FileMetaData::verify_signature(std::shared_ptr<FooterSigningEncryptor> encryptor,
+                                    const void* tail) {
+  return impl_->verify_signature(encryptor, tail);
 }
 
 uint32_t FileMetaData::size() const { return impl_->size(); }
@@ -878,7 +881,7 @@ class ColumnChunkMetaDataBuilder::ColumnChunkMetaDataBuilderImpl {
 
   void WriteTo(OutputStream* sink, const std::shared_ptr<Encryptor>& encryptor) {
     ThriftSerializer serializer;
-    const auto& encrypt_md = properties_->column_encryption_props(column_->path());
+    const auto& encrypt_md = properties_->column_encryption_properties(column_->path());
 
     // column is unencrypted
     if (!encrypt_md || !encrypt_md->is_encrypted()) {
@@ -903,8 +906,8 @@ class ColumnChunkMetaDataBuilder::ColumnChunkMetaDataBuilderImpl {
       }
       column_chunk_->__set_crypto_metadata(ccmd);
 
-      // TODO: check file_encryption() is null or not
-      auto footer_key = properties_->file_encryption()->footer_encryption_key();
+      DCHECK(properties_->file_encryption_properties());
+      auto footer_key = properties_->file_encryption_properties()->footer_key();
 
       // non-uniform: footer is unencrypted, or column is encrypted with a column-specific
       // key
@@ -1159,8 +1162,8 @@ class FileMetaDataBuilder::FileMetaDataBuilderImpl {
       const std::shared_ptr<const KeyValueMetadata>& key_value_metadata)
       : properties_(props), schema_(schema), key_value_metadata_(key_value_metadata) {
     metadata_.reset(new format::FileMetaData());
-    if (props->file_encryption() != nullptr &&
-        props->file_encryption()->footer_signing_key().empty()) {
+    if (props->file_encryption_properties() != nullptr &&
+        props->file_encryption_properties()->encrypted_footer()) {
       crypto_metadata_.reset(new format::FileCryptoMetaData());
     }
   }
@@ -1241,14 +1244,11 @@ class FileMetaDataBuilder::FileMetaDataBuilderImpl {
       return nullptr;
     }
 
-    auto file_encryption = properties_->file_encryption();
+    auto file_encryption_properties = properties_->file_encryption_properties();
 
-    crypto_metadata_->__set_encryption_algorithm(ToThrift(file_encryption->algorithm()));
-    std::string key_metadata;
-    if (file_encryption->encrypted_footer())
-      key_metadata = file_encryption->footer_encryption_key_metadata();
-    else
-      key_metadata = file_encryption->footer_signing_key_metadata();
+    crypto_metadata_->__set_encryption_algorithm(
+        ToThrift(file_encryption_properties->algorithm()));
+    std::string key_metadata = file_encryption_properties->footer_key_metadata();
 
     if (!key_metadata.empty()) {
       crypto_metadata_->__set_key_metadata(key_metadata);

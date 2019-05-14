@@ -62,12 +62,13 @@ std::shared_ptr<Encryptor> InternalFileEncryptor::GetFooterEncryptor() {
   if (footer_encryptor_ != NULLPTR) {
     return footer_encryptor_;
   }
+
   ParquetCipher::type algorithm = properties_->algorithm().algorithm;
-  std::string aad = parquet_encryption::createFooterAAD(properties_->file_aad());
-  std::string footer_key = properties_->footer_encryption_key();
+  std::string footer_aad = parquet_encryption::createFooterAAD(properties_->file_aad());
+  std::string footer_key = properties_->footer_key();
   auto aes_encryptor = GetMetaAesEncryptor(algorithm, footer_key.size());
   std::shared_ptr<Encryptor> encryptor = std::make_shared<Encryptor>(
-      aes_encryptor, footer_key, properties_->file_aad(), aad);
+      aes_encryptor, footer_key, properties_->file_aad(), footer_aad);
   footer_encryptor_ = encryptor;
   return encryptor;
 }
@@ -76,12 +77,13 @@ std::shared_ptr<Encryptor> InternalFileEncryptor::GetFooterSigningEncryptor() {
   if (footer_signing_encryptor_ != NULLPTR) {
     return footer_signing_encryptor_;
   }
+
   ParquetCipher::type algorithm = properties_->algorithm().algorithm;
-  std::string aad = parquet_encryption::createFooterAAD(properties_->file_aad());
-  std::string footer_signing_key = properties_->footer_signing_key();
+  std::string footer_aad = parquet_encryption::createFooterAAD(properties_->file_aad());
+  std::string footer_signing_key = properties_->footer_key();
   auto aes_encryptor = GetMetaAesEncryptor(algorithm, footer_signing_key.size());
   std::shared_ptr<Encryptor> encryptor = std::make_shared<Encryptor>(
-      aes_encryptor, footer_signing_key, properties_->file_aad(), aad);
+      aes_encryptor, footer_signing_key, properties_->file_aad(), footer_aad);
   footer_signing_encryptor_ = encryptor;
   return encryptor;
 }
@@ -116,11 +118,7 @@ InternalFileEncryptor::InternalFileEncryptor::GetColumnEncryptor(
 
   std::string key;
   if (column_prop->is_encrypted_with_footer_key()) {
-    if (properties_->encrypted_footer()) {
-      key = properties_->footer_encryption_key();
-    } else {
-      key = properties_->footer_signing_key();
-    }
+    key = properties_->footer_key();
   } else {
     key = column_prop->key();
   }

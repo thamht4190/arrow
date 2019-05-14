@@ -123,32 +123,31 @@ class SerializedRowGroup : public RowGroupReader::Contents {
 
     bool encrypted = true;
 
-    // file is unencrypted
-    // or file is encrypted but column is unencrypted
+    // Column is encrypted only if crypto_metadata exists.
     if (!crypto_metadata) {
       encrypted = false;
     }
 
     if (!encrypted) {
       return PageReader::Open(std::move(stream), col->num_values(), col->compression(),
-                              col->has_dictionary_page(), row_group_ordinal_,
-                              (int16_t)i /* column_ordinal */, properties_.memory_pool());
+                              properties_.memory_pool(), col->has_dictionary_page(),
+                              row_group_ordinal_, (int16_t)i /* column_ordinal */);
     }
 
-    // the column is encrypted
+    // The column is encrypted
 
-    // the column is encrypted with footer key
+    // The column is encrypted with footer key
     if (crypto_metadata->encrypted_with_footer_key()) {
       auto meta_decryptor = file_decryptor_->GetFooterDecryptorForColumnMeta();
       auto data_decryptor = file_decryptor_->GetFooterDecryptorForColumnData();
 
       return PageReader::Open(std::move(stream), col->num_values(), col->compression(),
-                              col->has_dictionary_page(), row_group_ordinal_, (int16_t)i,
-                              properties_.memory_pool(), meta_decryptor, data_decryptor);
+                              properties_.memory_pool(), col->has_dictionary_page(),
+                              row_group_ordinal_, (int16_t)i, meta_decryptor,
+                              data_decryptor);
     }
 
-    // file is encrypted and the column is encrypted with its own key
-
+    // The column is encrypted with its own key
     std::string column_key_metadata = crypto_metadata->key_metadata();
     std::shared_ptr<schema::ColumnPath> column_path =
         std::make_shared<schema::ColumnPath>(crypto_metadata->path_in_schema());
@@ -159,8 +158,9 @@ class SerializedRowGroup : public RowGroupReader::Contents {
         file_decryptor_->GetColumnDataDecryptor(column_path, column_key_metadata);
 
     return PageReader::Open(std::move(stream), col->num_values(), col->compression(),
-                            col->has_dictionary_page(), row_group_ordinal_, (int16_t)i,
-                            properties_.memory_pool(), meta_decryptor, data_decryptor);
+                            properties_.memory_pool(), col->has_dictionary_page(),
+                            row_group_ordinal_, (int16_t)i, meta_decryptor,
+                            data_decryptor);
   }
 
  private:
@@ -294,8 +294,8 @@ class SerializedFile : public ParquetFileReader::Contents {
           }
 
           auto encryptor = file_decryptor_->GetFooterSigningEncryptor();
-          if (!file_metadata_->verify(encryptor,
-                                      metadata_buffer->data() + read_metadata_len)) {
+          if (!file_metadata_->verify_signature(
+                  encryptor, metadata_buffer->data() + read_metadata_len)) {
             throw ParquetException(
                 "Invalid parquet file. Could not verify plaintext "
                 "footer metadata");
