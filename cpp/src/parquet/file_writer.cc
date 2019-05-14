@@ -279,7 +279,7 @@ class FileSerializer : public ParquetFileWriter::Contents {
       row_group_writer_.reset();
 
       // Write magic bytes and metadata
-      auto file_encryption_properties = properties_->file_encryption();
+      auto file_encryption_properties = properties_->file_encryption_properties();
 
       if (file_encryption_properties == nullptr) { // plaintext regular file
         file_metadata_ = metadata_->Finish();
@@ -383,7 +383,7 @@ class FileSerializer : public ParquetFileWriter::Contents {
   std::unique_ptr<InternalFileEncryptor> file_encryptor_;
 
   void StartFile() {
-    auto file_encryption_properties = properties_->file_encryption();
+    auto file_encryption_properties = properties_->file_encryption_properties();
     if (file_encryption_properties == nullptr) {
       // Unencrypted parquet files always start with PAR1
       sink_->Write(PARQUET_MAGIC, 4);
