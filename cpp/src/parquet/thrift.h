@@ -201,7 +201,8 @@ template <class T>
 inline void DeserializeThriftMsg(const uint8_t* buf, uint32_t* len, T* deserialized_msg,
                                  const std::shared_ptr<Decryptor>& decryptor = NULLPTR,
                                  bool shouldReadLength = false) {
-  if (decryptor == NULLPTR) { // thrift message is not encrypted
+  // thrift message is not encrypted
+  if (decryptor == NULLPTR) {
     // Deserialize msg bytes into c++ thrift msg using memory transport.
     shared_ptr<ThriftBuffer> tmem_transport(
         new ThriftBuffer(const_cast<uint8_t*>(buf), *len));
@@ -217,7 +218,7 @@ inline void DeserializeThriftMsg(const uint8_t* buf, uint32_t* len, T* deseriali
     }
     uint32_t bytes_left = tmem_transport->available_read();
     *len = *len - bytes_left;
-  } else { // thrift message is encrypted
+  } else {  // thrift message is encrypted
     uint32_t clen;
     if (shouldReadLength) {
       // first 4 bytes for length
@@ -276,10 +277,11 @@ class ThriftSerializer {
     uint32_t out_length;
     SerializeToBuffer(obj, &out_length, &out_buffer);
 
-    if (encryptor == NULLPTR) { // obj is not encrypted
+    // obj is not encrypted
+    if (encryptor == NULLPTR) {
       out->Write(out_buffer, out_length);
       return static_cast<int64_t>(out_length);
-    } else { // obj is encrypted
+    } else {  // obj is encrypted
       std::vector<uint8_t> cipher_buffer(encryptor->CiphertextSizeDelta() + out_length);
       int cipher_buffer_len =
           encryptor->Encrypt(out_buffer, out_length, cipher_buffer.data());
