@@ -280,10 +280,12 @@ class FileSerializer : public ParquetFileWriter::Contents {
 
       // Write magic bytes and metadata
       auto file_encryption_properties = properties_->file_encryption();
-      if (file_encryption_properties == nullptr) {
+
+      if (file_encryption_properties == nullptr) { // plaintext regular file
         file_metadata_ = metadata_->Finish();
         WriteFileMetaData(*file_metadata_, sink_.get());
-      } else {
+      } else { // Encrypted file
+        //Encrypted file with encrypted footer
         if (file_encryption_properties->encrypted_footer()) {
           // encrypted footer
           file_metadata_ = metadata_->Finish();
@@ -298,8 +300,7 @@ class FileSerializer : public ParquetFileWriter::Contents {
               static_cast<uint32_t>(sink_->Tell() - metadata_start);
           sink_->Write(reinterpret_cast<uint8_t*>(&footer_and_crypto_len), 4);
           sink_->Write(PARQUET_EMAGIC, 4);
-        } else {
-          // footer plain mode
+        } else { // Encrypted file with plaintext footer
           EncryptionAlgorithm signing_encryption;
           EncryptionAlgorithm algo = file_encryption_properties->algorithm();
           signing_encryption.aad.aad_file_unique = algo.aad.aad_file_unique;
@@ -432,7 +433,7 @@ std::unique_ptr<ParquetFileWriter> ParquetFileWriter::Open(
 
 void WriteFileMetaData(const FileMetaData& file_metadata, OutputStream* sink,
                        const std::shared_ptr<Encryptor>& encryptor, bool encrypt_footer) {
-  if (encryptor == nullptr) {
+  if (encryptor == nullptr) { // plaintext regular file
     // Write MetaData
     uint32_t metadata_len = static_cast<uint32_t>(sink->Tell());
 
@@ -441,11 +442,11 @@ void WriteFileMetaData(const FileMetaData& file_metadata, OutputStream* sink,
     // Write Footer
     sink->Write(reinterpret_cast<uint8_t*>(&metadata_len), 4);
     sink->Write(PARQUET_MAGIC, 4);
-  } else {
-    if (encrypt_footer) {
+  } else { // Encrypted file
+    if (encrypt_footer) { // Encrypted file with encrypted footer
       // encrypt and write to sink
       file_metadata.WriteTo(sink, encryptor);
-    } else {
+    } else { // Encrypted file with plaintext footer
       uint32_t metadata_len = static_cast<uint32_t>(sink->Tell());
       file_metadata.WriteTo(sink, encryptor);
       metadata_len = static_cast<uint32_t>(sink->Tell()) - metadata_len;
