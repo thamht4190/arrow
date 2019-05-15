@@ -37,6 +37,9 @@ class FooterSigningEncryptor {
  public:
   FooterSigningEncryptor(ParquetCipher::type algorithm, const std::string& key,
                          const std::string& file_aad, const std::string& aad);
+  ~FooterSigningEncryptor() {
+     key_.replace(0, key_.length(), key_.length(), '\0');
+  }
   int CiphertextSizeDelta();
   int SignedFooterEncrypt(const uint8_t* footer, int footer_len, uint8_t* nonce,
                           uint8_t* encrypted_footer);
@@ -54,6 +57,9 @@ class Decryptor {
  public:
   Decryptor(parquet_encryption::AesDecryptor* decryptor, const std::string& key,
             const std::string& file_aad, const std::string& aad);
+  ~Decryptor() {
+     key_.replace(0, key_.length(), key_.length(), '\0');
+  }
 
   const std::string& file_aad() const { return file_aad_; }
   void update_aad(const std::string& aad) { aad_ = aad; }

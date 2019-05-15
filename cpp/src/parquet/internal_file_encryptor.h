@@ -36,6 +36,10 @@ class Encryptor {
  public:
   Encryptor(parquet_encryption::AesEncryptor* aes_encryptor, const std::string& key,
             const std::string& file_aad, const std::string& aad);
+  ~Encryptor() {
+    key_.replace(0, key_.length(), key_.length(), '\0');
+  }
+
   const std::string& file_aad() { return file_aad_; }
   void update_aad(const std::string& aad) { aad_ = aad; }
 

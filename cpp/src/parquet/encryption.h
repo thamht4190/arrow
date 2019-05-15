@@ -97,6 +97,8 @@ class PARQUET_EXPORT ColumnEncryptionProperties {
     explicit Builder(const std::shared_ptr<schema::ColumnPath>& path)
         : Builder(path, true) {}
 
+    ~Builder() { key_.replace(0, key_.length(), key_.length(), '\0'); }
+
     // Set a column-specific key.
     // If key is not set on an encrypted column, the column will
     // be encrypted with the footer key.
@@ -148,6 +150,8 @@ class PARQUET_EXPORT ColumnEncryptionProperties {
   ColumnEncryptionProperties(const ColumnEncryptionProperties& other) = default;
   ColumnEncryptionProperties(ColumnEncryptionProperties&& other) = default;
 
+  ~ColumnEncryptionProperties() { key_.replace(0, key_.length(), key_.length(), '\0'); }
+
  private:
   const std::shared_ptr<schema::ColumnPath> column_path_;
   bool encrypted_;
@@ -169,6 +173,8 @@ class PARQUET_EXPORT ColumnDecryptionProperties {
 
     explicit Builder(const std::shared_ptr<schema::ColumnPath>& path)
         : column_path_(path) {}
+
+    ~Builder() { key_.replace(0, key_.length(), key_.length(), '\0'); }
 
     // Set an explicit column key. If applied on a file that contains
     // key metadata for this column the metadata will be ignored,
@@ -195,6 +201,10 @@ class PARQUET_EXPORT ColumnDecryptionProperties {
   ColumnDecryptionProperties() = default;
   ColumnDecryptionProperties(const ColumnDecryptionProperties& other) = default;
   ColumnDecryptionProperties(ColumnDecryptionProperties&& other) = default;
+
+  ~ColumnDecryptionProperties() {
+    key_.replace(0, key_.length(), key_.length(), '\0');
+  }
 
   const std::shared_ptr<schema::ColumnPath>& column_path() { return column_path_; }
   const std::string& key() const { return key_; }
@@ -227,6 +237,10 @@ class PARQUET_EXPORT FileDecryptionProperties {
     Builder() {
       check_plaintext_footer_integrity_ = DEFAULT_CHECK_SIGNATURE;
       plaintext_files_allowed_ = DEFAULT_ALLOW_PLAINTEXT_FILES;
+    }
+
+    ~Builder() {
+      footer_key_.replace(0, footer_key_.length(), footer_key_.length(), '\0');
     }
 
     // Set an explicit footer key. If applied on a file that contains
@@ -357,6 +371,10 @@ class PARQUET_EXPORT FileDecryptionProperties {
     return aad_prefix_verifier_;
   }
 
+  ~FileDecryptionProperties() {
+    footer_key_.replace(0, footer_key_.length(), footer_key_.length(), '\0');
+  }
+
  private:
   std::string footer_key_;
   std::string aad_prefix_;
@@ -392,6 +410,10 @@ class PARQUET_EXPORT FileEncryptionProperties {
           encrypted_footer_(DEFAULT_ENCRYPTED_FOOTER) {
       footer_key_ = footer_key;
       store_aad_prefix_in_file_ = false;
+    }
+
+    ~Builder() {
+      footer_key_.replace(0, footer_key_.length(), footer_key_.length(), '\0');
     }
 
     // Create files with plaintext footer.
@@ -488,6 +510,10 @@ class PARQUET_EXPORT FileEncryptionProperties {
 
   std::shared_ptr<ColumnEncryptionProperties> column_properties(
       const std::shared_ptr<schema::ColumnPath>& column_path);
+
+  ~FileEncryptionProperties() {
+    footer_key_.replace(0, footer_key_.length(), footer_key_.length(), '\0');
+  }
 
  private:
   EncryptionAlgorithm algorithm_;
