@@ -45,7 +45,6 @@ class FooterSigningEncryptor {
                           uint8_t* encrypted_footer);
 
  private:
-  ParquetCipher::type algorithm_;
   std::string key_;
   std::string file_aad_;
   std::string aad_;
