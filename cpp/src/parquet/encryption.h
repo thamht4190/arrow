@@ -202,9 +202,7 @@ class PARQUET_EXPORT ColumnDecryptionProperties {
   ColumnDecryptionProperties(const ColumnDecryptionProperties& other) = default;
   ColumnDecryptionProperties(ColumnDecryptionProperties&& other) = default;
 
-  ~ColumnDecryptionProperties() {
-    key_.replace(0, key_.length(), key_.length(), '\0');
-  }
+  ~ColumnDecryptionProperties() { key_.replace(0, key_.length(), key_.length(), '\0'); }
 
   const std::shared_ptr<schema::ColumnPath>& column_path() { return column_path_; }
   const std::string& key() const { return key_; }
