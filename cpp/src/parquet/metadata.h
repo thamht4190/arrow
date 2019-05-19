@@ -28,6 +28,7 @@
 #include "arrow/util/macros.h"
 #include "parquet/properties.h"
 #include "parquet/schema.h"
+#include "parquet/thrift.h"
 #include "parquet/types.h"
 #include "parquet/util/visibility.h"
 
@@ -289,6 +290,9 @@ class PARQUET_EXPORT ColumnChunkMetaDataBuilder {
 
   // The metadata contents, suitable for passing to ColumnChunkMetaData::Make
   const void* contents() const;
+
+  void copy_column_metadata_without_statistics(format::ColumnMetaData& from,
+                                               format::ColumnMetaData& to);
 
   // For writing metadata at end of column chunk
   void WriteTo(OutputStream* sink,
