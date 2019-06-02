@@ -300,6 +300,11 @@ add_parquet_test(public-api-test)
 add_parquet_test(types-test)
 add_parquet_test(reader-test)
 
+if(PARQUET_BUILD_ENCRYPTION)
+  add_parquet_test(encryption-test)
+  add_parquet_test(encryption-metadata-test)
+endif()
+
 # Those tests need to use static linking as they access thrift-generated
 # symbols which are not exported by parquet.dll on Windows (PARQUET-1420).
 add_parquet_test(file-deserialize-test USE_STATIC_LINKING)
