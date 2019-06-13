@@ -166,10 +166,6 @@ set(PARQUET_SRCS
     column_writer.cc
     deprecated_io.cc
     encoding.cc
-    encryption.cc
-    encryption_internal.cc
-    internal_file_decryptor.cc
-    internal_file_encryptor.cc
     file_reader.cc
     file_writer.cc
     metadata.cc
@@ -182,6 +178,16 @@ set(PARQUET_SRCS
     schema.cc
     statistics.cc
     types.cc)
+
+if(PARQUET_BUILD_ENCRYPTION)
+  set(PARQUET_SRCS
+    ${PARQUET_SRCS}
+    encryption.cc
+    encryption_internal.cc
+    internal_file_decryptor.cc
+    internal_file_encryptor.cc)
+endif()
+
 
 # Ensure that thrift compilation is done before using its generated headers
 # in parquet code.
