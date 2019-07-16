@@ -23,16 +23,7 @@
 #include <unordered_map>
 #include <utility>
 
-#ifdef PARQUET_ENCRYPTION
 #include "parquet/encryption.h"
-#else
-namespace parquet {
-class FileEncryptionProperties;
-class FileDecryptionProperties;
-class ColumnEncryptionProperties;
-}  // namespace parquet
-#endif
-
 #include "parquet/exception.h"
 #include "parquet/parquet_version.h"
 #include "parquet/platform.h"
@@ -71,7 +62,6 @@ class PARQUET_EXPORT ReaderProperties {
 
   int64_t buffer_size() const { return buffer_size_; }
 
-#ifdef PARQUET_ENCRYPTION
   void file_decryption_properties(
       const std::shared_ptr<FileDecryptionProperties>& decryption) {
     file_decryption_properties_ = decryption;
@@ -80,7 +70,6 @@ class PARQUET_EXPORT ReaderProperties {
   FileDecryptionProperties* file_decryption_properties() {
     return file_decryption_properties_.get();
   }
-#endif
 
  private:
   ::arrow::MemoryPool* pool_;
@@ -291,13 +280,11 @@ class PARQUET_EXPORT WriterProperties {
       return this->compression(path->ToDotString(), codec);
     }
 
-#ifdef PARQUET_ENCRYPTION
     Builder* encryption(
         const std::shared_ptr<FileEncryptionProperties>& file_encryption_properties) {
       file_encryption_properties_ = file_encryption_properties;
       return this;
     }
-#endif
 
     Builder* enable_statistics() {
       default_column_properties_.set_statistics_enabled(true);
@@ -430,7 +417,6 @@ class PARQUET_EXPORT WriterProperties {
     return file_encryption_properties_.get();
   }
 
-#ifdef PARQUET_ENCRYPTION
   std::shared_ptr<ColumnEncryptionProperties> column_encryption_properties(
       const std::shared_ptr<schema::ColumnPath>& path) const {
     if (file_encryption_properties_) {
@@ -439,7 +425,6 @@ class PARQUET_EXPORT WriterProperties {
       return NULLPTR;
     }
   }
-#endif
 
  private:
   explicit WriterProperties(
