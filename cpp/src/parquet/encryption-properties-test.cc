@@ -209,7 +209,7 @@ TEST(TestEncryptionProperties, UseAadPrefix) {
 TEST(TestEncryptionProperties, UseAadPrefixNotStoreInFile) {
   FileEncryptionProperties::Builder builder(kFooterEncryptionKey);
   builder.aad_prefix(kFileName);
-  builder.disable_store_aad_prefix_storage();
+  builder.disable_aad_prefix_storage();
   std::shared_ptr<FileEncryptionProperties> props = builder.build();
 
   ASSERT_EQ("", props->algorithm().aad.aad_prefix);

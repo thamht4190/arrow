@@ -23,7 +23,11 @@
 #include <regex>
 #include <sstream>
 
-#include <encryption-reader-writer-all-crypto-options.h>
+#include <arrow/io/file.h>
+#include <arrow/util/logging.h>
+
+#include <parquet/api/reader.h>
+#include <parquet/api/writer.h>
 
 /*
  * This file contains samples for writing and reading encrypted Parquet files in different
@@ -88,11 +92,18 @@
  */
 
 constexpr int NUM_ROWS_PER_ROW_GROUP = 500;
+constexpr int FIXED_LENGTH = 10;
 
 const std::string kFooterEncryptionKey = "0123456789012345";  // 128bit/16
 const std::string kColumnEncryptionKey1 = "1234567890123450";
 const std::string kColumnEncryptionKey2 = "1234567890123451";
 const std::string fileName = "tester";
+
+using parquet::ConvertedType;
+using parquet::Repetition;
+using parquet::Type;
+using parquet::schema::GroupNode;
+using parquet::schema::PrimitiveNode;
 
 using FileClass = ::arrow::io::FileOutputStream;
 
@@ -116,6 +127,30 @@ std::vector<std::string> GetDirectoryFiles(const std::string& path) {
   }
   closedir(dir);
   return files;
+}
+
+static std::shared_ptr<GroupNode> SetupSchema() {
+  parquet::schema::NodeVector fields;
+  // Create a primitive node named 'boolean_field' with type:BOOLEAN,
+  // repetition:REQUIRED
+  fields.push_back(PrimitiveNode::Make("boolean_field", Repetition::REQUIRED,
+                                       Type::BOOLEAN, ConvertedType::NONE));
+
+  // Create a primitive node named 'int32_field' with type:INT32, repetition:REQUIRED,
+  // logical type:TIME_MILLIS
+  fields.push_back(PrimitiveNode::Make("int32_field", Repetition::REQUIRED, Type::INT32,
+                                       ConvertedType::TIME_MILLIS));
+
+  fields.push_back(PrimitiveNode::Make("float_field", Repetition::REQUIRED, Type::FLOAT,
+                                       ConvertedType::NONE));
+
+  fields.push_back(PrimitiveNode::Make("double_field", Repetition::REQUIRED, Type::DOUBLE,
+                                       ConvertedType::NONE));
+
+  // Create a GroupNode named 'schema' using the primitive nodes defined above
+  // This GroupNode is the root node of the schema tree
+  return std::static_pointer_cast<GroupNode>(
+      GroupNode::Make("schema", Repetition::REQUIRED, fields));
 }
 
 void InteropTestWriteEncryptedParquetFiles(std::string root_path) {
@@ -225,7 +260,7 @@ void InteropTestWriteEncryptedParquetFiles(std::string root_path) {
       file_encryption_builder_5.column_properties(encryption_cols5)
           ->footer_key_metadata("kf")
           ->aad_prefix(fileName)
-          ->disable_store_aad_prefix_storage()
+          ->disable_aad_prefix_storage()
           ->build());
 
   // Encryption configuration 6: Encrypt two columns and the footer, with different keys.

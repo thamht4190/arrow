@@ -249,7 +249,7 @@ FileEncryptionProperties::Builder* FileEncryptionProperties::Builder::aad_prefix
 }
 
 FileEncryptionProperties::Builder*
-FileEncryptionProperties::Builder::disable_store_aad_prefix_storage() {
+FileEncryptionProperties::Builder::disable_aad_prefix_storage() {
   DCHECK(!aad_prefix_.empty());
 
   store_aad_prefix_in_file_ = false;

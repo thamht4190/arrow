@@ -100,9 +100,8 @@ class PARQUET_EXPORT ColumnEncryptionProperties {
   class PARQUET_EXPORT Builder {
    public:
     /// Convenience builder for regular (not nested) columns.
-    explicit Builder(const std::string& name) {
-      Builder(schema::ColumnPath::FromDotString(name), true);
-    }
+    explicit Builder(const std::string& name)
+        : Builder(schema::ColumnPath::FromDotString(name), true) {}
 
     /// Convenience builder for encrypted columns.
     explicit Builder(const std::shared_ptr<schema::ColumnPath>& path)
@@ -436,7 +435,7 @@ class PARQUET_EXPORT FileEncryptionProperties {
 
     /// Skip storing AAD Prefix in file.
     /// If not called, and if AAD Prefix is set, it will be stored.
-    Builder* disable_store_aad_prefix_storage();
+    Builder* disable_aad_prefix_storage();
 
     /// Set the list of encrypted columns and their properties (keys etc).
     /// If not called, all columns will be encrypted with the footer key.

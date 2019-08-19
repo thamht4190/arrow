@@ -40,10 +40,17 @@
 #include "parquet/encoding.h"
 #include "parquet/platform.h"
 
+#include "parquet/test-util.h"
+
 namespace parquet {
 namespace test {
 
-std::string data_file(const char* file);
+std::string data_file(const char* file) {
+  std::string dir_string(test::get_data_dir());
+  std::stringstream ss;
+  ss << dir_string << "/" << file;
+  return ss.str();
+}
 
 using parquet::ConvertedType;
 using parquet::Repetition;

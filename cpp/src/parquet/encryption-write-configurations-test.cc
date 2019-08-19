@@ -356,7 +356,7 @@ TEST_F(TestEncryptionConfiguration,
       file_encryption_builder_5.column_properties(encryption_cols5)
           ->footer_key_metadata("kf")
           ->aad_prefix(kFileName_)
-          ->disable_store_aad_prefix_storage()
+          ->disable_aad_prefix_storage()
           ->build(),
       "tmp_encrypt_columns_and_footer_disable_aad_storage.parquet.encrypted");
 }
